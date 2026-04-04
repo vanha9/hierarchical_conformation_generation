@@ -1,4 +1,4 @@
-name: hier_confgengit commit -m "Add conda environment specification"
+name: hier_confgen
 channels:
   - defaults
   - conda-forge
