@@ -1,0 +1,5 @@
+- experiment=mdlm
+- data.batch_size=4
+- logger=csv
+- trainer.devices=4
+- data.train_val_split=[0.8,0.2]

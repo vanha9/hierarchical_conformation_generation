@@ -1,0 +1,4 @@
+merged model
+non-residual
+two_step gen
+120K
