@@ -344,7 +344,7 @@ python scripts/dump.py \
   pkl
 ```
 
-The original ESMDiff preprocessing workflow used Biopython 1.79 for part of preprocessing. The current environment uses Biopython 1.84 because the model code imports `Bio.Data.PDBData`. If you are reproducing the legacy preprocessing step exactly and run into parser differences, use a temporary preprocessing environment with Biopython 1.79, then return to the main `hier_confgen` environment for training and inference.
+The repository environment pins Biopython 1.84. If you need to reproduce an older ESMDiff preprocessing workflow exactly, use the package versions from that workflow for preprocessing and return to `hier_confgen` for training and inference.
 
 Expected processed data paths:
 
@@ -467,84 +467,37 @@ The default PDB data configuration is:
 hierarchical_ConfGen/configs/data/pdb.yaml
 ```
 
-## Troubleshooting
+## Common Issues
 
-### `CondaError: Run 'conda init' before 'conda activate'`
-
-Inside the Docker image, run:
+If `conda activate hier_confgen` is not available inside the Docker container, load conda's shell hook first:
 
 ```bash
 source /opt/conda/etc/profile.d/conda.sh
 conda activate hier_confgen
 ```
 
-### `ImportError: cannot import name 'PDBData' from 'Bio.Data'`
-
-Check the Biopython version:
+If local imports fail, make sure `PYTHONPATH` matches the code you are running:
 
 ```bash
-python - <<'PY'
-import Bio
-print(Bio.__version__)
-from Bio.Data import PDBData
-print("PDBData import ok")
-PY
-```
-
-If this fails, update the environment from the repository root:
-
-```bash
-conda env update -n hier_confgen -f environment.yml
-```
-
-### `ModuleNotFoundError: No module named 'slm'` or `No module named 'esm'`
-
-Set `PYTHONPATH` for the part of the code you are running.
-
-For inference and diffusion training:
-
-```bash
+# Inference and diffusion training
 export PYTHONPATH=/hierarchical_conformation_generation/hierarchical_ConfGen:$PYTHONPATH
-```
 
-For VQ-VAE training:
-
-```bash
+# VQ-VAE training
 export PYTHONPATH=/hierarchical_conformation_generation/Hierarchical_VQ_VAE:$PYTHONPATH
 ```
 
-### Checkpoint not found
-
-Check that this file exists:
+If the released checkpoint is not found, check the path and download it as described in **Checkpoint Download**:
 
 ```bash
 ls -lh /data/hier_ConfGen_ckpt/mp_rank_00_model_states.pt
 ```
 
-If it does not exist, download it from Zenodo as described in **Checkpoint Download**.
-
-### CUDA out of memory
-
-On a shared server, another process may already be using the default GPU. Check GPU memory first:
+If CUDA memory is limited on a shared server, select an idle GPU and reduce the sample count, denoising steps, or training batch size:
 
 ```bash
 nvidia-smi
+CUDA_VISIBLE_DEVICES=0 python slm/sample_esmdiff_var.py ...
 ```
-
-Then choose an available GPU:
-
-```bash
-CUDA_VISIBLE_DEVICES=2 python slm/sample_esmdiff_var.py ...
-```
-
-For inference, reduce:
-
-```text
---num_samples
---num_steps
-```
-
-For training, reduce the batch size or number of devices in the Hydra command.
 
 ## Citation
 
