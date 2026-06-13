@@ -714,7 +714,6 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
         # for scale in range(3):
         for scale in [0, 2]:
             if scale == 0:
@@ -727,8 +726,6 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term.shape[0], 1, device=self.device)
                 x_this_term = self._ddpm_update(x_this_term, t, sequence_tokens=sequence_tokens, dt=dt, lengths=lengths, scale=scale)
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                # Store intermediate tokens for debugging.
-                check_tensor[(scale, i)] = x_this_term
             if self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 if scale != 0 : t = 0 * torch.ones(x.shape[0], 1, device=self.device)
@@ -740,11 +737,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
                 else:
                     x_this_term = add_eos_bos_tokens(lengths, 4098, 4097, 4099, x_this_term[:, 1:-1])
-                # Store intermediate tokens for debugging.
-                check_tensor[(scale, "result")] = x_this_term
             x = x_this_term
-        # Debug token saving is disabled because the original hard-coded path
-        # can be unavailable in a fresh checkout or container.
 
         #exit()
         return x_this_term
@@ -774,7 +767,6 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
         for scale in [0, 2]:
             x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x[:, 1:-1])
             if scale == 2: num_steps = 0
@@ -784,14 +776,12 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                 x_this_term = self._ddpm_update_beam(x_this_term, t, sequence_tokens=sequence_tokens, dt=dt, lengths=lengths, scale=scale)
 
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                check_tensor[(scale, i)] = x_this_term
             if self.noise_removal and scale == 0:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 sigma_t = self.noise(t)[0]
                 x_this_term, _ = self._model_wrapper_inference(xt_var=x_this_term, sequence_tokens=sequence_tokens, sigma=sigma_t, lengths=lengths, scale=scale)
                 x_this_term = x_this_term.argmax(dim=-1)
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                check_tensor[(scale, "result")] = x_this_term
             elif self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 if scale != 0 : t = 0 * torch.ones(x.shape[0], 1, device=self.device)
@@ -802,11 +792,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
                 else:
                     x_this_term = add_eos_bos_tokens(lengths, 4098, 4097, 4099, x_this_term[:, 1:-1])
-                # Store intermediate tokens for debugging.
-                check_tensor[(scale, "result")] = x_this_term
             x = x_this_term
-        # Debug token saving is disabled because the original hard-coded path
-        # can be unavailable in a fresh checkout or container.
         return x_this_term
 
     @torch.no_grad()
@@ -841,7 +827,6 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
         for scale in range(3):
             if scale == 1 : x = ct
             elif scale == 2 : x = mt+32
@@ -855,8 +840,6 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                 # print(f"checking step : {i}")
                 # print(f"checking after update x_this_term : {x_this_term[0]}")
                 # print(f"checking after update x_this_term shape : {x_this_term.shape}")
-                # Store intermediate tokens for debugging.
-                check_tensor[(scale, i)] = x_this_term
             if self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 sigma_t = self.noise(t)[0]
@@ -870,14 +853,10 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     prec = 544    
                 x_this_term[x_this_term != 4640] += prec
                 x_this_term = add_eos_bos_tokens(lengths, 4642, 4641, 4643, x_this_term[:, 1:-1])
-                # Store intermediate tokens for debugging.
-                check_tensor[(scale, "result")] = x_this_term
                 #print(f"checking after noise removal x_this_term : {x_this_term[0]}")
                 #print(f"checking after noise removal x_this_term shape : {x_this_term.shape}")
             first_flag = True
             x = x_this_term
-        # Debug token saving is disabled because the original hard-coded path
-        # can be unavailable in a fresh checkout or container.
         exit()
         return x_this_term
     
