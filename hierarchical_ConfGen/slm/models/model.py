@@ -21,6 +21,22 @@ from slm.models.utils import cross_entropy
 from slm.utils import noise_utils
 
 torch.set_printoptions(threshold=float('inf'))
+
+
+def _store_debug_token(debug_tokens, key, tensor):
+    if debug_tokens is not None:
+        debug_tokens[key] = tensor.detach().cpu()
+
+
+def _save_debug_tokens(debug_tokens, filename):
+    if debug_tokens is None:
+        return
+
+    debug_dir = os.environ.get("HCG_DEBUG_TOKEN_DIR")
+    os.makedirs(debug_dir, exist_ok=True)
+    torch.save(debug_tokens, os.path.join(debug_dir, filename))
+
+
 def _sample_categorical(categorical_probs):
     gumbel_norm = (
         1e-10
@@ -53,15 +69,15 @@ def add_eos_bos_tokens(lengths, bos_token, eos_token, pad_token, input_tokens):
     bos_eos_added_length = lengths + 2
     max_len = bos_eos_added_length.max()
 
-    # 1. 출력 텐서 초기화 (B, max_len) with PAD
+    # Initialize output tensor (B, max_len) with PAD.
     B = input_tokens.shape[0]
     output_tensor = torch.full((B, max_len), pad_token, dtype=torch.long, device=input_tokens.device)
 
-    # 2. BOS 토큰 삽입 (각 시퀀스의 첫 위치)
+    # Insert the BOS token at the first position of each sequence.
     output_tensor[:, 0] = bos_token
     output_tensor[:, 1:-1] = input_tokens
 
-    eos_positions = lengths + 1  # index 위치
+    eos_positions = lengths + 1
     output_tensor[torch.arange(B), eos_positions] = eos_token
     return output_tensor
 
@@ -714,7 +730,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
+        check_tensor = {} if os.environ.get("HCG_DEBUG_TOKEN_DIR") else None
         # for scale in range(3):
         for scale in [0, 2]:
             if scale == 0:
@@ -727,8 +743,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term.shape[0], 1, device=self.device)
                 x_this_term = self._ddpm_update(x_this_term, t, sequence_tokens=sequence_tokens, dt=dt, lengths=lengths, scale=scale)
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                #save for check
-                check_tensor[(scale, i)] = x_this_term
+                _store_debug_token(check_tensor, (scale, i), x_this_term)
             if self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 if scale != 0 : t = 0 * torch.ones(x.shape[0], 1, device=self.device)
@@ -740,10 +755,9 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
                 else:
                     x_this_term = add_eos_bos_tokens(lengths, 4098, 4097, 4099, x_this_term[:, 1:-1])
-                #save for check
-                check_tensor[(scale, "result")] = x_this_term
+                _store_debug_token(check_tensor, (scale, "result"), x_this_term)
             x = x_this_term
-        torch.save(check_tensor, '/hierarchical_ConfGen/slm/models/bpti/bpti_token.pth')
+        _save_debug_tokens(check_tensor, "bpti_token.pth")
 
         #exit()
         return x_this_term
@@ -773,7 +787,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
+        check_tensor = {} if os.environ.get("HCG_DEBUG_TOKEN_DIR") else None
         for scale in [0, 2]:
             x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x[:, 1:-1])
             if scale == 2: num_steps = 0
@@ -783,14 +797,14 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                 x_this_term = self._ddpm_update_beam(x_this_term, t, sequence_tokens=sequence_tokens, dt=dt, lengths=lengths, scale=scale)
 
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                check_tensor[(scale, i)] = x_this_term
+                _store_debug_token(check_tensor, (scale, i), x_this_term)
             if self.noise_removal and scale == 0:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 sigma_t = self.noise(t)[0]
                 x_this_term, _ = self._model_wrapper_inference(xt_var=x_this_term, sequence_tokens=sequence_tokens, sigma=sigma_t, lengths=lengths, scale=scale)
                 x_this_term = x_this_term.argmax(dim=-1)
                 x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
-                check_tensor[(scale, "result")] = x_this_term
+                _store_debug_token(check_tensor, (scale, "result"), x_this_term)
             elif self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 if scale != 0 : t = 0 * torch.ones(x.shape[0], 1, device=self.device)
@@ -801,10 +815,9 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     x_this_term = add_eos_bos_tokens(lengths, 34, 33, 35, x_this_term[:, 1:-1])
                 else:
                     x_this_term = add_eos_bos_tokens(lengths, 4098, 4097, 4099, x_this_term[:, 1:-1])
-                #save for check
-                check_tensor[(scale, "result")] = x_this_term
+                _store_debug_token(check_tensor, (scale, "result"), x_this_term)
             x = x_this_term
-        torch.save(check_tensor, '/hierarchical_ConfGen/slm/models/residual_120K/bpti_beam/bpti_beam_token.pth')
+        _save_debug_tokens(check_tensor, "bpti_beam_token.pth")
         return x_this_term
 
     @torch.no_grad()
@@ -839,7 +852,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
         )
         dt = (1 - eps) / num_steps
         p_x0_cache = None
-        check_tensor = {}
+        check_tensor = {} if os.environ.get("HCG_DEBUG_TOKEN_DIR") else None
         for scale in range(3):
             if scale == 1 : x = ct
             elif scale == 2 : x = mt+32
@@ -853,8 +866,7 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                 # print(f"checking step : {i}")
                 # print(f"checking after update x_this_term : {x_this_term[0]}")
                 # print(f"checking after update x_this_term shape : {x_this_term.shape}")
-                #save for check
-                check_tensor[(scale, i)] = x_this_term
+                _store_debug_token(check_tensor, (scale, i), x_this_term)
             if self.noise_removal:
                 t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
                 sigma_t = self.noise(t)[0]
@@ -868,13 +880,12 @@ class MaskedDiffusionLanguageModeling(LanguageModeling):
                     prec = 544    
                 x_this_term[x_this_term != 4640] += prec
                 x_this_term = add_eos_bos_tokens(lengths, 4642, 4641, 4643, x_this_term[:, 1:-1])
-                #save for check
-                check_tensor[(scale, "result")] = x_this_term
+                _store_debug_token(check_tensor, (scale, "result"), x_this_term)
                 #print(f"checking after noise removal x_this_term : {x_this_term[0]}")
                 #print(f"checking after noise removal x_this_term shape : {x_this_term.shape}")
             first_flag = True
             x = x_this_term
-        torch.save(check_tensor, '/given_coarse_to_fine_tokens.pth')
+        _save_debug_tokens(check_tensor, "given_coarse_to_fine_tokens.pth")
         exit()
         return x_this_term
     

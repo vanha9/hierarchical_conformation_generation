@@ -98,7 +98,7 @@ dependencies:
       - async-timeout==5.0.1
       - attrs==25.3.0
       - autopage==0.5.2
-      - biopython==1.79
+      - biopython==1.84
       - biotite==0.41.2
       - brotli==1.1.0
       - certifi==2025.1.31

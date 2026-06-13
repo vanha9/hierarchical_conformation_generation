@@ -1,4 +1,4 @@
-# pretraing dataset
+# pretraining dataset
 
 #_target_: slm.data.protein_datamodule.ProteinDataModule
 _target_: slm.data.protein_datamodule_var.ProteinDataModule
@@ -6,10 +6,10 @@ _target_: slm.data.protein_datamodule_var.ProteinDataModule
 dataset_var:
   #_target_: slm.data.protein_datamodule.ESMEmbeddingDataset
   _target_: slm.data.protein_datamodule_var.ESMEmbeddingDataset
-  path_to_text_list: /data/prot/data/dssp_success_short_256.txt
-  # path_to_text_list: /data/prot/data/dssp_success_filtered_756.txt
-  path_to_embeddings: /data/prot/data/structure_preprocess
-  path_to_sequences: /data/prot/data/processed_chains_encoding
+  path_to_text_list: /data/pdb_data/processed_chains/dssp_success_short_256.txt
+  # path_to_text_list: /data/pdb_data/processed_chains/dssp_success_filtered_756.txt
+  path_to_embeddings: /data/structure_preprocess
+  path_to_sequences: /data/pdb_data/processed_chains_encoding
   cluster_rep_csv: null
   transform: null
   training: true

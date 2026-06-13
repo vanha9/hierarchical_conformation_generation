@@ -38,19 +38,19 @@ def apply_special_tokens(token_tensor, lengths, bos_id, eos_id, pad_id):
     total_len = T + 2
     device = lengths.device
 
-    # 1. 전체 PAD로 채운 새 텐서 만들기
+    # Initialize the output tensor with PAD tokens.
     result = torch.full((B, total_len), pad_id, device=device)
 
-    # 2. BOS 삽입
+    # Insert BOS at the first position.
     result[:, 0] = bos_id
 
-    # 3. 토큰 복사: token_tensor[:, :Lᵢ] → result[:, 1:Lᵢ+1]
+    # Copy each valid token span after BOS.
     idxs = torch.arange(T, device=device).unsqueeze(0).expand(B, T).to(device)  # (B, T)
     mask = idxs < lengths.unsqueeze(1)                      # (B, T)
 
     b_idx, t_idx = torch.nonzero(mask, as_tuple=True)
     result[b_idx, t_idx + 1] = token_tensor[b_idx, t_idx]
-    eos_pos = lengths + 1  # EOS 위치는 L + 1
+    eos_pos = lengths + 1  # EOS is placed at L + 1.
     result[torch.arange(B, device=device), eos_pos] = eos_id
     
     return result
@@ -60,13 +60,13 @@ def kabsch_align_torch(P: torch.Tensor, Q: torch.Tensor):
     P_flat = P.view(-1, 3)
     Q_flat = Q.view(-1, 3)
 
-    # 중심 정렬
+    # Center both point clouds.
     P_mean = P_flat.mean(dim=0, keepdim=True)
     Q_mean = Q_flat.mean(dim=0, keepdim=True)
     P_cent = P_flat - P_mean
     Q_cent = Q_flat - Q_mean
 
-    # 공분산 행렬
+    # Covariance matrix.
     C = torch.matmul(P_cent.T, Q_cent)
 
     # SVD
@@ -74,10 +74,10 @@ def kabsch_align_torch(P: torch.Tensor, Q: torch.Tensor):
     d = torch.sign(torch.linalg.det(torch.matmul(V, Wt)))
     D = torch.diag(torch.tensor([1., 1., d], device=P.device))
 
-    # 회전 행렬
+    # Rotation matrix.
     U = torch.matmul(torch.matmul(V, D), Wt)
 
-    # P에 회전 적용
+    # Apply rotation to P.
     P_aligned = torch.matmul(P_cent, U)
 
     return P_aligned, Q_cent
@@ -86,7 +86,7 @@ def compute_rmsd_aligned_torch(X_hat, X, lengths):
     """
     X_hat, X: (B, 256, 3, 3)
     lengths: (B,)
-    Returns: 평균 RMSD over batch
+    Returns the mean RMSD over the batch.
     """
     B = X.shape[0]
     rmsds = []
@@ -113,7 +113,7 @@ def compute_rmsd_aligned_torch(X_hat, X, lengths):
 def backbone_distance_loss(X_hat, X, lengths):
     """
     X_hat, X: (B, 256, 3, 3)
-    lengths: (B,) - 각 배치마다 유효한 L 길이
+    lengths: (B,) valid sequence length for each batch item
     """
     B = X.shape[0]
     losses = []
@@ -177,7 +177,7 @@ def backbone_direction_loss(X_hat, X, lengths):
 
     for b in range(B):
         L = lengths[b]
-        if L < 2:  # vector 연산은 최소 2 residue 필요
+        if L < 2:  # Vector operations require at least two residues.
             continue
 
         V_hat = compute_vectors(X_hat[b, 1:L+1])  # (L-1, 6, 3)
@@ -292,7 +292,7 @@ class ProjectedDecoder(StructureTokenDecoder):
             (structure_tokens_large < 0).sum() == 0
         ), "All structure tokens set to -1 should be replaced with BOS, EOS, PAD, or MASK tokens by now, but that isn't the case!"
 
-        # (1) row/column 인덱스 생성 (broadcastable 형태로)
+        # Build broadcastable row/column indices.
         L = structure_tokens_large.shape[1]
         row_idx = torch.arange(L, device=lengths.device).view(1, L, 1)  # [1, L, 1]
         col_idx = torch.arange(L, device=lengths.device).view(1, 1, L)  # [1, 1, L]
@@ -567,7 +567,18 @@ class ProjectedCodebookModel(nn.Module):
         return bb_coords, bb_dist_loss, bb_direction_loss, encoder_loss, rmsd
 
 def train():
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    def env_int(name, default):
+        value = os.getenv(name)
+        return default if value in (None, "") else int(value)
+
+    device_name = os.getenv("HCG_DEVICE", "cuda:0")
+    device = torch.device(device_name if torch.cuda.is_available() else "cpu")
+    batch_size = env_int("HCG_BATCH_SIZE", 16)
+    num_workers = env_int("HCG_NUM_WORKERS", 4)
+    max_epochs = env_int("HCG_MAX_EPOCHS", 200)
+    max_steps = env_int("HCG_MAX_STEPS", 0)
+    save_dir = os.getenv("HCG_SAVE_DIR", "/data/hier_VQ_VAE_ckpt/new_vqvae_huber")
+    os.makedirs(save_dir, exist_ok=True)
 
     model = ProjectedCodebookModel(
         encoder_ckpt="/data/esm3_checkpoint/esm3_structure_encoder_v0.pth",
@@ -588,17 +599,18 @@ def train():
         txt_file="/data/pdb_data/processed_chains/dssp_success_short_256.txt",
         chain_dir="/data/pdb_data/processed_chains",
     )
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4, collate_fn=pad_collate_fn)
-    save_dir = "/esm/esm/models/new_vqvae_huber"
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=pad_collate_fn)
     writer = SummaryWriter(log_dir=os.path.join(save_dir, "runs"))
 
-    for epoch in range(200):
+    for epoch in range(max_epochs):
         model.train()
         total_loss = 0
+        steps_this_epoch = 0
 
         pbar = tqdm(dataloader, desc=f"Epoch {epoch:02d}", leave=False)
         #for step, (data1, data2) in enumerate(pbar):
         for step, (atom_pos, lengths, res_ids) in enumerate(pbar):
+            steps_this_epoch = step + 1
             atom_pos = atom_pos.to(device)  # (B, 256, 37, 3)
             lengths = lengths.to(device)    # (B, 256)
             res_ids = res_ids.to(device)    # (B, 256)
@@ -627,7 +639,9 @@ def train():
             writer.add_scalar("Loss/rmsd_medium", rmsd[1].item(), epoch * len(dataloader) + step)
             writer.add_scalar("Loss/rmsd_small", rmsd[2].item(), epoch * len(dataloader) + step)
             #writer.add_scalar("Loss/Commitment", commitment_loss.item(), epoch * len(dataloader) + step)
-        avg_loss = total_loss / len(dataloader)
+            if max_steps > 0 and steps_this_epoch >= max_steps:
+                break
+        avg_loss = total_loss / max(steps_this_epoch, 1)
         print(f"[Epoch {epoch}] Avg Loss: {avg_loss:.4f}")
         writer.add_scalar("Loss/Epoch", avg_loss, epoch)
 
@@ -641,13 +655,13 @@ def train():
                 'encoder_weight' : encoder_param,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, f'/esm/esm/models/new_vqvae_huber/encoder_checkpoint_{epoch}.pth')
+            }, os.path.join(save_dir, f'encoder_checkpoint_{epoch}.pth'))
             torch.save({
                 'epoch' : epoch,
                 'decode_proj' : decode_param,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, f'/esm/esm/models/new_vqvae_huber/decoder_checkpoint_{epoch}.pth')
+            }, os.path.join(save_dir, f'decoder_checkpoint_{epoch}.pth'))
 
     writer.close()
     
