@@ -498,11 +498,3 @@ If CUDA memory is limited on a shared server, select an idle GPU and reduce the 
 nvidia-smi
 CUDA_VISIBLE_DEVICES=0 python slm/sample_esmdiff_var.py ...
 ```
-
-## Citation
-
-If you use this repository or the released checkpoints, please cite the manuscript and the Zenodo checkpoint archive:
-
-```text
-Checkpoint archive: https://doi.org/10.5281/zenodo.19412545
-```
