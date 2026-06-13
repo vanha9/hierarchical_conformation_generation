@@ -567,18 +567,7 @@ class ProjectedCodebookModel(nn.Module):
         return bb_coords, bb_dist_loss, bb_direction_loss, encoder_loss, rmsd
 
 def train():
-    def env_int(name, default):
-        value = os.getenv(name)
-        return default if value in (None, "") else int(value)
-
-    device_name = os.getenv("HCG_DEVICE", "cuda:0")
-    device = torch.device(device_name if torch.cuda.is_available() else "cpu")
-    batch_size = env_int("HCG_BATCH_SIZE", 16)
-    num_workers = env_int("HCG_NUM_WORKERS", 4)
-    max_epochs = env_int("HCG_MAX_EPOCHS", 200)
-    max_steps = env_int("HCG_MAX_STEPS", 0)
-    save_dir = os.getenv("HCG_SAVE_DIR", "/data/hier_VQ_VAE_ckpt/new_vqvae_huber")
-    os.makedirs(save_dir, exist_ok=True)
+    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
     model = ProjectedCodebookModel(
         encoder_ckpt="/data/esm3_checkpoint/esm3_structure_encoder_v0.pth",
@@ -599,18 +588,17 @@ def train():
         txt_file="/data/pdb_data/processed_chains/dssp_success_short_256.txt",
         chain_dir="/data/pdb_data/processed_chains",
     )
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=pad_collate_fn)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4, collate_fn=pad_collate_fn)
+    save_dir = "/esm/esm/models/new_vqvae_huber"
     writer = SummaryWriter(log_dir=os.path.join(save_dir, "runs"))
 
-    for epoch in range(max_epochs):
+    for epoch in range(200):
         model.train()
         total_loss = 0
-        steps_this_epoch = 0
 
         pbar = tqdm(dataloader, desc=f"Epoch {epoch:02d}", leave=False)
         #for step, (data1, data2) in enumerate(pbar):
         for step, (atom_pos, lengths, res_ids) in enumerate(pbar):
-            steps_this_epoch = step + 1
             atom_pos = atom_pos.to(device)  # (B, 256, 37, 3)
             lengths = lengths.to(device)    # (B, 256)
             res_ids = res_ids.to(device)    # (B, 256)
@@ -639,9 +627,7 @@ def train():
             writer.add_scalar("Loss/rmsd_medium", rmsd[1].item(), epoch * len(dataloader) + step)
             writer.add_scalar("Loss/rmsd_small", rmsd[2].item(), epoch * len(dataloader) + step)
             #writer.add_scalar("Loss/Commitment", commitment_loss.item(), epoch * len(dataloader) + step)
-            if max_steps > 0 and steps_this_epoch >= max_steps:
-                break
-        avg_loss = total_loss / max(steps_this_epoch, 1)
+        avg_loss = total_loss / len(dataloader)
         print(f"[Epoch {epoch}] Avg Loss: {avg_loss:.4f}")
         writer.add_scalar("Loss/Epoch", avg_loss, epoch)
 
@@ -655,13 +641,13 @@ def train():
                 'encoder_weight' : encoder_param,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, os.path.join(save_dir, f'encoder_checkpoint_{epoch}.pth'))
+            }, f'/esm/esm/models/new_vqvae_huber/encoder_checkpoint_{epoch}.pth')
             torch.save({
                 'epoch' : epoch,
                 'decode_proj' : decode_param,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
-            }, os.path.join(save_dir, f'decoder_checkpoint_{epoch}.pth'))
+            }, f'/esm/esm/models/new_vqvae_huber/decoder_checkpoint_{epoch}.pth')
 
     writer.close()
     

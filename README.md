@@ -361,19 +361,14 @@ If these directories already exist on your system, you do not need to download a
 ```bash
 cd /hierarchical_conformation_generation/Hierarchical_VQ_VAE
 export PYTHONPATH=/hierarchical_conformation_generation/Hierarchical_VQ_VAE:$PYTHONPATH
+mkdir -p /esm/esm/models/new_vqvae_huber
 python esm/models/new_vqvae.py
-```
-
-For a short smoke test of the training loop and checkpoint saving:
-
-```bash
-HCG_MAX_EPOCHS=1 HCG_MAX_STEPS=5 python esm/models/new_vqvae.py
 ```
 
 The full script writes checkpoints to:
 
 ```text
-/data/hier_VQ_VAE_ckpt/new_vqvae_huber
+/esm/esm/models/new_vqvae_huber
 ```
 
 ## Structure Tokenization
@@ -395,52 +390,6 @@ The default diffusion data configuration expects:
 /data/structure_preprocess
 /data/pdb_data/processed_chains_encoding
 ```
-
-Run a short one-step smoke test first:
-
-```bash
-cd /hierarchical_conformation_generation/hierarchical_ConfGen
-export PYTHONPATH=/hierarchical_conformation_generation/hierarchical_ConfGen:$PYTHONPATH
-
-CUDA_VISIBLE_DEVICES=0 python slm/train.py \
-  experiment=mdlm \
-  trainer=gpu \
-  callbacks=none \
-  logger=csv \
-  data.batch_size=1 \
-  data.num_workers=0 \
-  trainer.max_epochs=1 \
-  trainer.precision=32 \
-  +trainer.max_steps=1 \
-  +trainer.limit_val_batches=0 \
-  trainer.default_root_dir=outputs/diffusion_smoke \
-  hydra.run.dir=outputs/diffusion_smoke/hydra
-```
-
-On a shared server, replace `CUDA_VISIBLE_DEVICES=0` with an idle GPU. The `trainer.precision=32` override is intentional for this single-GPU smoke test.
-
-To check the multi-GPU DeepSpeed path, run a two-GPU smoke test:
-
-```bash
-CUDA_VISIBLE_DEVICES=0,1 python slm/train.py \
-  experiment=mdlm \
-  trainer=deepspeed \
-  callbacks=none \
-  logger=csv \
-  data.batch_size=2 \
-  data.num_workers=0 \
-  trainer.devices=2 \
-  trainer.max_epochs=1 \
-  trainer.precision=32 \
-  +trainer.max_steps=1 \
-  +trainer.limit_val_batches=0 \
-  trainer.default_root_dir=outputs/deepspeed_smoke \
-  hydra.run.dir=outputs/deepspeed_smoke/hydra
-```
-
-On a shared server, choose idle GPUs in `CUDA_VISIBLE_DEVICES`.
-
-For full training:
 
 ```bash
 cd /hierarchical_conformation_generation/hierarchical_ConfGen
